@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 20px;
+        background-color: #f0f0f0;
+      }
+      .upload-container {
+        background-color: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        width: 90%;
+        max-width: 800px;
+      }
+      canvas {
+        border: 1px solid #ccc;
+        margin: 10px;
+      }
+      .preview {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .controls {
+        margin: 10px 0;
+      }
+      .data-output {
+        width: 90%;
+        max-width: 800px;
+        margin-top: 20px;
+      }
+      .output-container {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-top: 20px;
+      }
+      .data-textarea {
+        width: 100%;
+        height: 200px;
+        margin-top: 10px;
+        font-family: monospace;
+      }
+      .format-buttons {
+        margin: 10px 0;
+        display: flex;
+        gap: 10px;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        background-color: #007bff;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="upload-container">
+      <h2>High Detail Pixel Circle Converter</h2>
+      <input type="file" id="imageInput" accept="image/*" />
+      <div class="controls">
+        <label
+          >Pixel Size (0.001 - 1.000):
+          <input
+            type="number"
+            id="pixelSizeInput"
+            min="0.001"
+            max="1"
+            step="0.001"
+            value="0.1"
+          />
+        </label>
+      </div>
+    </div>
+    <div class="preview">
+      <canvas id="originalCanvas"></canvas>
+      <canvas id="pixelCanvas"></canvas>
+    </div>
+    <div class="output-container">
+      <h3>Coordinate Data</h3>
+      <div class="format-buttons">
+        <button onclick="setFormat('json')">JSON Format</button>
+        <button onclick="setFormat('csv')">CSV Format</button>
+        <button onclick="setFormat('array')">Array Format</button>
+        <button onclick="copyToClipboard()">Copy to Clipboard</button>
+      </div>
+      <textarea id="dataOutput" class="data-textarea" readonly></textarea>
+    </div>
+
+    <script>
+      const imageInput = document.getElementById("imageInput");
+      const pixelSizeInput = document.getElementById("pixelSizeInput");
+      const originalCanvas = document.getElementById("originalCanvas");
+      const pixelCanvas = document.getElementById("pixelCanvas");
+      const dataOutput = document.getElementById("dataOutput");
+      const originalCtx = originalCanvas.getContext("2d");
+      const pixelCtx = pixelCanvas.getContext("2d", {
+        willReadFrequently: true,
+      });
+
+      const canvasSize = 800;
+      originalCanvas.width = canvasSize;
+      originalCanvas.height = canvasSize;
+      pixelCanvas.width = canvasSize;
+      pixelCanvas.height = canvasSize;
+
+      const radius = 40;
+      let blackPixels = [];
+      let currentFormat = "json";
+
+      function processImage() {
+        const file = imageInput.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function (event) {
+          const img = new Image();
+          img.onload = function () {
+            originalCtx.clearRect(0, 0, canvasSize, canvasSize);
+            pixelCtx.clearRect(0, 0, canvasSize, canvasSize);
+
+            const scale = Math.min(
+              canvasSize / img.width,
+              canvasSize / img.height
+            );
+            const width = img.width * scale;
+            const height = img.height * scale;
+            const x = (canvasSize - width) / 2;
+            const y = (canvasSize - height) / 2;
+            originalCtx.drawImage(img, x, y, width, height);
+
+            createDetailedPixelCircle();
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function createDetailedPixelCircle() {
+        const centerX = canvasSize / 2;
+        const centerY = canvasSize / 2;
+        const scale = 10;
+        const pixelSize = parseFloat(pixelSizeInput.value);
+        const scaledRadius = radius * scale;
+
+        const imageData = originalCtx.getImageData(
+          centerX - scaledRadius,
+          centerY - scaledRadius,
+          scaledRadius * 2,
+          scaledRadius * 2
+        ).data;
+
+        pixelCtx.clearRect(0, 0, canvasSize, canvasSize);
+        pixelCtx.fillStyle = "black";
+
+        blackPixels = []; // Reset black pixels array
+
+        for (let y = -radius; y <= radius; y += pixelSize) {
+          for (let x = -radius; x <= radius; x += pixelSize) {
+            if (x * x + y * y <= radius * radius) {
+              const scaledX = (x + radius) * scale;
+              const scaledY = (y + radius) * scale;
+
+              const i =
+                (Math.floor(scaledY) * (scaledRadius * 2) +
+                  Math.floor(scaledX)) *
+                4;
+
+              const r = imageData[i];
+              const g = imageData[i + 1];
+              const b = imageData[i + 2];
+              const brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+
+              if (brightness < 0.5) {
+                pixelCtx.fillRect(
+                  centerX + x * scale,
+                  centerY + y * scale,
+                  Math.max(1, pixelSize * scale),
+                  Math.max(1, pixelSize * scale)
+                );
+
+                // Store coordinates with 3 decimal places
+                blackPixels.push({
+                  x: Number(x.toFixed(3)),
+                  y: Number((-y).toFixed(3)),
+                });
+              }
+            }
+          }
+        }
+
+        updateDataOutput();
+      }
+
+      function updateDataOutput() {
+        let output = "";
+        switch (currentFormat) {
+          case "json":
+            const paths = blackPixels.map(point => ({
+              width: 1,
+              color: "black",
+              points: [point]
+            }));
+            output = JSON.stringify({ paths }, null, 2);
+            break;
+          case "csv":
+            output =
+              "x,y\n" + blackPixels.map((p) => `${p.x},${p.y}`).join("\n");
+            break;
+          case "array":
+            output =
+              "[" +
+              blackPixels.map((p) => `[${p.x}, ${p.y}]`).join(",\n ") +
+              "]";
+            break;
+        }
+        dataOutput.value = output;
+      }
+
+      function setFormat(format) {
+        currentFormat = format;
+        updateDataOutput();
+      }
+
+      function copyToClipboard() {
+        dataOutput.select();
+        document.execCommand("copy");
+        alert("Copied to clipboard!");
+      }
+
+      imageInput.addEventListener("change", processImage);
+      pixelSizeInput.addEventListener("change", processImage);
+    </script>
+  </body>
+</html>
